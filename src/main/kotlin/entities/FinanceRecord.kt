@@ -1,19 +1,12 @@
 package entities
 
 import core.DBException
-import core.IIDentifiable
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import java.io.DataInputStream
-import java.io.DataOutputStream
 import kotlin.math.roundToLong
 
-data class FinanceRecord(override val id: Int, var operations: List<FinanceOperation>) : IIDentifiable {
+data class FinanceRecord(var operations: List<FinanceOperation>) {
     var totals = mapOf<Int, Long>()
-
-    override fun write(stream: DataOutputStream) {
-        TODO("Not yet implemented")
-    }
 
     fun updateChanges(changes: FinanceChanges, accounts: Accounts, subcategories: Subcategories) {
         operations.forEach { it.updateChanges(changes, accounts, subcategories) }
@@ -28,7 +21,7 @@ data class FinanceRecord(override val id: Int, var operations: List<FinanceOpera
 
 @Serializable
 data class FinanceOperation2(
-    val id: Int,
+    @SerialName("id") val date: Int,
     val amount: Double?,
     val summa: Double,
     @SerialName("subcategoryId") val subcategory: Int,
@@ -36,12 +29,12 @@ data class FinanceOperation2(
     @SerialName("finOpProperies") val properties: List<FinOpProperty2>?
 ) {
     fun toFinanceOperation(): FinanceOperation {
-        return FinanceOperation(id,
+        return FinanceOperation(0,
             if (amount == null) null else (amount * 1000).roundToLong(),
             (summa * 100).roundToLong(),
             subcategory,
             account,
-            if (properties == null) null else properties.map { it.toFinOpProperty() }.toList()
+            properties?.map { it.toFinOpProperty() }?.toList()
         )
     }
 }
@@ -59,40 +52,31 @@ data class FinOpProperty2(
 
 @Serializable
 data class FinanceOperation(
-    @SerialName("Id") override val id: Int,
+    @SerialName("Id") var date: Int,
     @SerialName("Amount") val amount: Long?,
     @SerialName("Summa") val summa: Long,
     @SerialName("SubcategoryId") val subcategory: Int,
     @SerialName("AccountId") val account: Int,
     @SerialName("FinOpProperies") val properties: List<FinOpProperty>?
-) : IIDentifiable {
-    override fun write(stream: DataOutputStream) {
-        TODO("Not yet implemented")
-    }
-
+) {
     fun updateChanges(changes: FinanceChanges, accounts: Accounts, subcategories: Subcategories) {
-        val subcategory = subcategories.get(subcategory);
+        val subcategory = subcategories.get(subcategory)
         when (subcategory.operationCode) {
-            "INCM" -> changes.income(account, summa)
-            "EXPN" -> changes.expenditure(account, summa)
-            "SPCL" -> {
-                if (subcategory.code == null) {
-                    throw DBException("missing subcategory code")
-                }
+            SubcategoryOperationCode.Incm -> changes.income(account, summa)
+            SubcategoryOperationCode.Expn -> changes.expenditure(account, summa)
+            SubcategoryOperationCode.Spcl -> {
                 when (subcategory.code) {
                     // Пополнение карточного счета наличными
-                    "INCC" -> handleIncc(changes, accounts)
+                    SubcategoryCode.Incc -> handleIncc(changes, accounts)
                     // Снятие наличных в банкомате
-                    "EXPC" -> handleExpc(changes, accounts)
+                    SubcategoryCode.Expc -> handleExpc(changes, accounts)
                     // Обмен валюты
-                    "EXCH" -> handleExch(changes)
+                    SubcategoryCode.Exch -> handleExch(changes)
                     // Перевод средств между платежными картами
-                    "TRFR" -> handleTrfr(changes)
+                    SubcategoryCode.Trfr -> handleTrfr(changes)
                     else -> throw DBException("unknown subcategory code")
                 }
             }
-
-            else -> throw DBException("unknown subcategory operation code")
         }
     }
 
@@ -109,31 +93,31 @@ data class FinanceOperation(
     private fun handleTrfrWithSumma(changes: FinanceChanges, value: Long)
     {
         if (properties == null) return
-        changes.expenditure(account, value);
+        changes.expenditure(account, value)
         val secondAccountProperty = properties.find { it.code == "SECA" }
         if (secondAccountProperty?.numericValue != null)
         {
-            changes.income(secondAccountProperty.numericValue.toInt(), summa);
+            changes.income(secondAccountProperty.numericValue.toInt(), summa)
         }
     }
 
     private fun handleExpc(changes: FinanceChanges, accounts: Accounts) {
-        changes.expenditure(account, summa);
+        changes.expenditure(account, summa)
         // cash account for corresponding currency code
-        val cashAccount = accounts.getCashAccount(account);
-        changes.income(cashAccount, summa);
+        val cashAccount = accounts.get(account).cashAccount
+        if (cashAccount != null) {
+            changes.income(cashAccount, summa)
+        }
     }
 
     private fun handleIncc(changes: FinanceChanges, accounts: Accounts) {
-        changes.income(account, summa);
+        changes.income(account, summa)
         // cash account for corresponding currency code
-        val cashAccount = accounts.getCashAccount(account);
-        changes.expenditure(cashAccount, summa);
+        val cashAccount = accounts.get(account).cashAccount
+        if (cashAccount != null) {
+            changes.expenditure(cashAccount, summa)
+        }
     }
-}
-
-fun createFinanceRecord(stream: DataInputStream): FinanceRecord {
-    TODO()
 }
 
 @Serializable

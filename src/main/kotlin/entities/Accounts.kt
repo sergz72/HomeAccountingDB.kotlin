@@ -1,20 +1,20 @@
 package entities
 
-import core.DBConfiguration
-import core.DataSource
-import core.IIDentifiable
+import core.*
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
-import java.io.DataInputStream
-import java.io.DataOutputStream
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 
-class Accounts(configuration: DBConfiguration, fileName: String) :
-    DataSource<Account>(configuration, fileName, { createAccount(it) }, { Json.decodeFromString(it) }) {
-    private val cashAccounts = data.filter { it.value.isCash }.map { it.value.currency to it.key }.toMap()
-
-    fun getCashAccount(account: Int): Int {
-        return cashAccounts.getValue(data.getValue(account).currency)
+class Accounts(source: DataSource<List<Account>>, dataFolderPath: String):
+    MapData<Account>(source, "$dataFolderPath/accounts") {
+    init {
+        val cashAccounts = data.filter { it.value.cashAccount == null }.map { it.value.currency to it.key }.toMap()
+        data.values.filter { it.cashAccount == 0 }.forEach { it.cashAccount = cashAccounts.getValue(it.currency) }
     }
 }
 
@@ -24,14 +24,18 @@ data class Account(
     val name: String,
     @SerialName("valutaCode") val currency: String,
     @Serializable(with = DBDateSerializer::class) val activeTo: Int?,
-    val isCash: Boolean
-) :
-    IIDentifiable {
-    override fun write(stream: DataOutputStream) {
-        TODO("Not yet implemented")
-    }
-}
+    @Serializable(with = IsCashSerializer::class) @SerialName("isCash") var cashAccount: Int?
+) : IIDentifiable
 
-fun createAccount(stream: DataInputStream): Account {
-    TODO()
+object IsCashSerializer : KSerializer<Int?> {
+    override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("IsCash", PrimitiveKind.INT)
+
+    override fun serialize(encoder: Encoder, value: Int?) {
+        TODO()
+    }
+
+    override fun deserialize(decoder: Decoder): Int? {
+        val isCash = decoder.decodeBoolean()
+        return if (isCash) {null} else{0}
+    }
 }

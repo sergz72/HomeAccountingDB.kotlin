@@ -1,3 +1,5 @@
+import kotlin.system.measureNanoTime
+
 fun main(args: Array<String>) {
     if (args.size < 3 || args.size > 5) {
         usage()
@@ -7,14 +9,12 @@ fun main(args: Array<String>) {
     when (args[1]) {
         "test_json" -> {
             val start1 = System.currentTimeMillis()
-            val db = DB(true, args[0])
+            val db = DB(JsonDBConfiguration(), args[0])
             val end1 = System.currentTimeMillis()
             println("Database has been loaded in ${end1 - start1} ms")
-            val start2 = System.currentTimeMillis()
-            db.calculateTotals(0)
-            val end2 = System.currentTimeMillis()
-            println("Totals calculation finished in ${end2 - start2} ms")
-            db.printChanges(args[2].toInt());
+            val us = measureNanoTime { db.calculateTotals(0) } / 1000
+            println("Totals calculation finished in $us us")
+            db.printChanges(args[2].toInt())
         }
         else -> usage()
     }
